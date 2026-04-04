@@ -100,15 +100,22 @@ function cleanEscalationSentinel(response) {
   return response.replace("ESCALATE_TO_HUMAN", "").trim();
 }
 
+// ─── Retry Helper ─────────────────────────────────────────────────────────────
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // ─── Gemini API Call ──────────────────────────────────────────────────────────
 
 /**
- * Send a prompt + history to Gemini and get a response
+ * Send a prompt + history to Gemini with automatic retry on rate limit
  * @param {string} userMessage
  * @param {{ role: string, content: string }[]} history
+ * @param {number} retries - number of retries remaining
  * @returns {Promise<string>}
  */
-async function getAIResponse(userMessage, history = []) {
+async function getAIResponse(userMessage, history = [], retries = 3) {
   const systemPrompt = buildSystemPrompt();
 
   // Convert history to Gemini format
@@ -117,7 +124,6 @@ async function getAIResponse(userMessage, history = []) {
     parts: [{ text: msg.content }],
   }));
 
-  // Build contents array: history + new user message
   const contents = [
     ...geminiHistory,
     { role: "user", parts: [{ text: userMessage }] },
@@ -143,19 +149,23 @@ async function getAIResponse(userMessage, history = []) {
       }
     );
 
-    const reply =
-      response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
+    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!reply) throw new Error("Empty response from Gemini");
     return reply.trim();
 
   } catch (err) {
-    if (err.response?.status === 400) {
-      throw new Error("Gemini API error: Invalid request — check your API key");
+    const status = err.response?.status;
+
+    // Rate limit — wait and retry
+    if (status === 429 && retries > 0) {
+      const waitMs = (4 - retries) * 5000; // 5s, 10s, 15s
+      console.log(`⏳ Gemini rate limit hit — retrying in ${waitMs/1000}s (${retries} retries left)`);
+      await sleep(waitMs);
+      return getAIResponse(userMessage, history, retries - 1);
     }
-    if (err.response?.status === 429) {
-      throw new Error("Gemini API rate limit hit — try again in a moment");
-    }
+
+    if (status === 400) throw new Error("Gemini API error: Invalid request — check your API key");
+    if (status === 429) throw new Error("Gemini rate limit — please wait a moment and try again");
     throw new Error(`Gemini error: ${err.message}`);
   }
 }
