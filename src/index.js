@@ -1,59 +1,57 @@
-// src/index.js
+// src/config/index.js
 require("dotenv").config();
-const express = require("express");
-const morgan = require("morgan");
-const config = require("./config");
 
-const webhookRouter = require("./routes/webhook");
-const adminRouter = require("./routes/admin");
+const config = {
+  server: {
+    port: parseInt(process.env.PORT) || 3000,
+    env: process.env.NODE_ENV || "development",
+  },
 
-const app = express();
+  whatsapp: {
+    token: process.env.WHATSAPP_TOKEN,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "technest_verify_2024",
+    apiVersion: process.env.WHATSAPP_API_VERSION || "v25.0",
+    get apiUrl() {
+      return `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/messages`;
+    },
+  },
 
-// ─── Middleware ────────────────────────────────────────────────────────────────
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+  groq: {
+    apiKey: process.env.GROQ_API_KEY,
+  },
 
-if (config.server.env !== "test") {
-  app.use(morgan(config.server.env === "production" ? "combined" : "dev"));
+  admin: {
+    phoneNumber: process.env.ADMIN_PHONE_NUMBER,
+  },
+
+  chat: {
+    historyStorage: process.env.HISTORY_STORAGE || "memory",
+    historyFilePath: "./logs/chat_history.json",
+    maxHistoryPerUser: 20,
+    maxTurnsBeforeEscalation: parseInt(process.env.MAX_TURNS_BEFORE_SUGGEST_ESCALATION) || 10,
+  },
+
+  shop: {
+    name: "TechNest Gadget Shop",
+    location: "123 Galle Road, Colombo 03, Sri Lanka",
+    phone: "+94 11 234 5678",
+    whatsapp: "+94 77 234 5678",
+    email: "hello@technest.lk",
+    hours: "Mon–Sat: 9:00 AM – 8:00 PM | Sun: 10:00 AM – 6:00 PM",
+    website: "www.technest.lk",
+  },
+};
+
+// Validate required env vars in production
+if (config.server.env === "production") {
+  const required = ["WHATSAPP_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "GROQ_API_KEY"];
+  for (const key of required) {
+    if (!process.env[key]) {
+      console.error(`❌  Missing required env var: ${key}`);
+      process.exit(1);
+    }
+  }
 }
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
-app.use("/webhook", webhookRouter);
-app.use("/admin", adminRouter);
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "TechNest WhatsApp AI Chatbot",
-    ai: "Google Gemini 1.5 Flash",
-    env: config.server.env,
-    uptime: process.uptime().toFixed(1) + "s",
-  });
-});
-
-app.use((req, res) => res.status(404).json({ error: "Route not found" }));
-
-app.use((err, req, res, _next) => {
-  console.error("💥 Unhandled error:", err.message);
-  res.status(500).json({ error: "Internal server error" });
-});
-
-// ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(config.server.port, () => {
-  console.log(`
-╔═══════════════════════════════════════════════╗
-║   🤖  TechNest WhatsApp AI Chatbot            ║
-╠═══════════════════════════════════════════════╣
-║  Status  : ONLINE                             ║
-║  Port    : ${String(config.server.port).padEnd(35)}║
-║  AI      : Google Gemini 1.5 Flash            ║
-║  Env     : ${config.server.env.padEnd(35)}║
-╠═══════════════════════════════════════════════╣
-║  Webhook : POST /webhook                      ║
-║  Admin   : GET  /admin                        ║
-║  Health  : GET  /health                       ║
-╚═══════════════════════════════════════════════╝
-  `);
-});
-
-module.exports = app;
+module.exports = config;
