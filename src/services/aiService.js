@@ -1,5 +1,5 @@
 // src/services/aiService.js
-// Core AI logic: builds system prompt, calls Google Gemini API, returns response
+// Core AI logic: builds system prompt, calls Groq API, returns response
 
 const axios = require("axios");
 const config = require("../config");
@@ -54,9 +54,7 @@ YOUR STRICT RULES
    pricing, services, and repairs. Is there anything about our gadgets I can help you with? 😊"
 
 3. PRICING: Always quote prices in LKR. Be upfront about prices.
-
 4. STOCK: If a product shows stock > 0, say it's available. If stock is 0, say "currently out of stock."
-
 5. Be concise. Use bullet points for specs. Use emojis sparingly but warmly.
 6. Never make up products, prices, or policies not listed above.
 7. For comparisons, be honest and helpful — guide the customer to the best fit.
@@ -100,73 +98,53 @@ function cleanEscalationSentinel(response) {
   return response.replace("ESCALATE_TO_HUMAN", "").trim();
 }
 
-// ─── Retry Helper ─────────────────────────────────────────────────────────────
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ─── Gemini API Call ──────────────────────────────────────────────────────────
+// ─── Groq API Call ────────────────────────────────────────────────────────────
 
 /**
- * Send a prompt + history to Gemini with automatic retry on rate limit
+ * Send a prompt + history to Groq and get a response
  * @param {string} userMessage
  * @param {{ role: string, content: string }[]} history
- * @param {number} retries - number of retries remaining
  * @returns {Promise<string>}
  */
-async function getAIResponse(userMessage, history = [], retries = 3) {
+async function getAIResponse(userMessage, history = []) {
   const systemPrompt = buildSystemPrompt();
 
-  // Convert history to Gemini format
-  const geminiHistory = history.map((msg) => ({
-    role: msg.role === "assistant" ? "model" : "user",
-    parts: [{ text: msg.content }],
-  }));
-
-  const contents = [
-    ...geminiHistory,
-    { role: "user", parts: [{ text: userMessage }] },
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history.map((msg) => ({ role: msg.role === "assistant" ? "assistant" : "user", content: msg.content })),
+    { role: "user", content: userMessage },
   ];
 
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.gemini.apiKey}`,
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        system_instruction: {
-          parts: [{ text: systemPrompt }],
-        },
-        contents,
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 512,
-          topP: 0.9,
-        },
+        model: "llama3-8b-8192",
+        messages,
+        temperature: 0.4,
+        max_tokens: 512,
+        top_p: 0.9,
       },
       {
         timeout: 30000,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${config.groq.apiKey}`,
+        },
       }
     );
 
-    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!reply) throw new Error("Empty response from Gemini");
+    const reply = response.data?.choices?.[0]?.message?.content;
+    if (!reply) throw new Error("Empty response from Groq");
     return reply.trim();
 
   } catch (err) {
     const status = err.response?.status;
+    const detail = err.response?.data?.error?.message || err.message;
 
-    // Rate limit — wait and retry
-    if (status === 429 && retries > 0) {
-      const waitMs = (4 - retries) * 5000; // 5s, 10s, 15s
-      console.log(`⏳ Gemini rate limit hit — retrying in ${waitMs/1000}s (${retries} retries left)`);
-      await sleep(waitMs);
-      return getAIResponse(userMessage, history, retries - 1);
-    }
-
-    if (status === 400) throw new Error("Gemini API error: Invalid request — check your API key");
-    if (status === 429) throw new Error("Gemini rate limit — please wait a moment and try again");
-    throw new Error(`Gemini error: ${err.message}`);
+    if (status === 401) throw new Error("Groq API error: Invalid API key");
+    if (status === 429) throw new Error("Groq rate limit hit — please wait a moment");
+    throw new Error(`Groq error: ${detail}`);
   }
 }
 
