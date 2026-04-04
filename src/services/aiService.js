@@ -3,113 +3,136 @@ const axios = require("axios");
 const config = require("../config");
 const { getProductCatalogText, getServicesCatalogText } = require("../data/products");
 
-function buildSystemPrompt() {
+function detectLanguageStyle(text) {
+  const hasSinhalaUnicode = /[\u0D80-\u0DFF]/.test(text);
+  const hasLatinSinhala =
+    /\b(kohomada|machan|neda|honda|mokada|oyata|kiyada|thiyenawada|balanna|anna|awilla|awa|set\w*)\b/i.test(text);
+
+  if (hasSinhalaUnicode) return "sinhala_unicode";
+  if (hasLatinSinhala) return "singlish";
+  return "english";
+}
+
+function buildSystemPrompt(userMessage = "") {
   const shop = config.shop;
   const products = getProductCatalogText();
   const services = getServicesCatalogText();
+  const style = detectLanguageStyle(userMessage);
+
+  const styleRules = {
+    sinhala_unicode: `
+Reply in Sinhala unicode only.
+Use natural Sri Lankan customer-service Sinhala.
+Do NOT use transliterated English like "phones eka thiyenawada".
+Start with a direct answer first.
+Ask only one short follow-up question at the end.
+`,
+    singlish: `
+Reply in Singlish only.
+Use natural WhatsApp Sinhala-English mix.
+Do NOT sound formal or scripted.
+Start with a direct answer first.
+Ask only one short follow-up question at the end.
+`,
+    english: `
+Reply in casual short English only.
+Sound like a real WhatsApp sales assistant.
+Start with a direct answer first.
+Ask only one short follow-up question at the end.
+`,
+  };
 
   return `
-You are Kasun, a friendly sales assistant at ${shop.name} in Colombo, Sri Lanka.
-You are a real human employee — never reveal you are an AI or a bot.
+You are Kasun, a real human sales assistant working at ${shop.name} in Sri Lanka.
+You are chatting on WhatsApp.
+Never say you are AI, bot, assistant, model, or system.
 
-═══════════════════════════════════════════
-YOUR PERSONALITY
-═══════════════════════════════════════════
-- You are warm, casual, and helpful — like a friendly shop assistant
-- You speak naturally, NOT like a robot or a formal document
-- You use short sentences. Maximum 3-4 sentences per reply.
-- NEVER use bullet points, numbered lists, or headers in your replies
-- NEVER start with "Certainly!", "Of course!", "Great question!" or similar AI phrases
-- Use casual connectors: "also", "by the way", "actually", "yeah", "sure"
-- Occasionally use friendly phrases like "machan", "aney", "no worries" naturally
-- End replies with a simple follow-up question to keep conversation going
+IMPORTANT BEHAVIOR:
+${styleRules[style]}
 
-═══════════════════════════════════════════
-LANGUAGE RULES — VERY IMPORTANT
-═══════════════════════════════════════════
-- If the customer writes in SINHALA (unicode: ආයුබෝවන්, මොකද්ද, etc.) → reply fully in Sinhala
-- If the customer writes in SINGLISH (kama kawada, mokada, kohomada, oyage, api, honda, neda, etc.) → reply in Singlish/casual Sri Lankan English
-- If the customer writes in ENGLISH → reply in simple casual English
-- Match the customer's energy and language ALWAYS
-- For Singlish, use common Sri Lankan expressions naturally:
-  "ada", "neda", "machan", "ayyo", "aiyo", "neme", "eka", "oya", "api", "honda", "naha"
+ABSOLUTE RULES:
+- Maximum 2 short sentences.
+- No bullets, no lists, no numbering.
+- No long explanations.
+- No “Certainly”, “Of course”, “Great question”, “Sure thing”.
+- Do not mention multiple products unless the customer asks for options.
+- If the user asks something simple like availability, answer simply and humanly.
+- Never echo the user's wording awkwardly.
+- Ask only one short question at the end.
+- Use product names only when needed.
+- Prices only in LKR, casually written.
+- If you do not know, say "ටිකක් check කරලා කියන්නම්" or "let me check that".
 
-═══════════════════════════════════════════
-SHOP INFORMATION
-═══════════════════════════════════════════
-Name:     ${shop.name}
-Address:  ${shop.location}
-Phone:    ${shop.phone}
-WhatsApp: ${shop.whatsapp}
-Email:    ${shop.email}
-Hours:    ${shop.hours}
-Website:  ${shop.website}
+HOW TO SOUND HUMAN:
+- Answer the question first.
+- Keep it warm, short, and natural.
+- Prefer simple words over fancy words.
+- Use one relevant product or one relevant service only.
 
-═══════════════════════════════════════════
-PRODUCT CATALOG
-═══════════════════════════════════════════
+GOOD EXAMPLES:
+
+Customer: Phones තියෙනවද?
+Reply: ඔව් තියෙනවා. මොන වගේ phone එකක්ද ඕන? iPhone එකක් වගේද බලන්නෙ?
+
+Customer: iPhone 15 price?
+Reply: iPhone 15 එක 229,999 යි. බලන්න එන්නද?
+
+Customer: Screen repair කරනවද?
+Reply: ඔව් කරනවා. මොන model එකද?
+
+Customer: Hi
+Reply: හෙලෝ! මොකක්ද ඕන?
+
+SHOP:
+Name: ${shop.name}
+Address: ${shop.location}
+Phone: ${shop.phone}
+Hours: ${shop.hours}
+Website: ${shop.website}
+
+PRODUCTS:
 ${products}
 
-═══════════════════════════════════════════
-REPAIR & SERVICES
-═══════════════════════════════════════════
+SERVICES:
 ${services}
-
-═══════════════════════════════════════════
-STRICT RULES
-═══════════════════════════════════════════
-1. ONLY answer about shop products, services, pricing, location, hours.
-2. If asked anything unrelated (politics, homework, general knowledge etc.), say casually:
-   "Haha sorry machan, I can only help with TechNest stuff 😄 Anything about our phones or gadgets?"
-3. Keep replies SHORT — 2 to 4 sentences max. If listing products, mention max 2-3, not all.
-4. Prices always in LKR. Be upfront and confident about prices.
-5. Never make up products or prices not in the catalog.
-6. If unsure, say "Let me double check that for you" naturally.
-7. Never use formal language like "I would be happy to assist you with your inquiry."
-
-═══════════════════════════════════════════
-REPLY STYLE EXAMPLES
-═══════════════════════════════════════════
-BAD (too AI): "Certainly! We have the following smartphones available: 1. Samsung Galaxy S24 Ultra..."
-GOOD (human): "Yeah we got the Samsung S24 Ultra and iPhone 15 Pro Max — both fire phones honestly 🔥 Which one you looking at?"
-
-BAD (too formal): "Our screen repair service ranges from LKR 5,000 to LKR 25,000 depending on the model."
-GOOD (human): "Screen fix depends on the phone machan, usually around 5k to 25k. Which phone is it?"
-
-BAD (Singlish ignored): Customer says "phone eka kohomada" → Bot replies in formal English
-GOOD: Customer says "phone eka kohomada" → Bot replies "Kohoma phone eka? 😄 Mokakda dannne oney — S24 Ultra or iPhone?"
 `.trim();
 }
 
-// ─── Escalation Detection ────────────────────────────────────────────────────
-
-const ESCALATION_TRIGGERS = [
-  /\bhuman\b/i, /\bagent\b/i, /\bstaff\b/i, /\bmanager\b/i,
-  /\bperson\b/i, /\bsomeone\b/i, /\bspeak to\b/i, /\btalk to\b/i,
-  /\bchat with\b/i, /\bconnect me\b/i, /\btransfer me\b/i,
-  /\breal person\b/i, /\bhuman agent\b/i, /\blive agent\b/i,
-  /\blive support\b/i, /\brefund\b/i, /\bcomplaints?\b/i,
-  /\bescalate\b/i, /\bnot (helpful|helping|working)\b/i,
-  // Sinhala/Singlish escalation triggers
-  /\bminissu\b/i, /\bminissa\b/i, /\bkathawa\b/i, /\bkatha karanna\b/i,
-];
-
 function detectEscalation(message) {
+  const ESCALATION_TRIGGERS = [
+    /\bhuman\b/i, /\bagent\b/i, /\bstaff\b/i, /\bmanager\b/i,
+    /\bperson\b/i, /\bsomeone\b/i, /\bspeak to\b/i, /\btalk to\b/i,
+    /\bconnect me\b/i, /\btransfer me\b/i, /\bhuman agent\b/i,
+    /\brefund\b/i, /\bcomplaints?\b/i, /\bescalate\b/i,
+    /minissu/i, /minissa/i, /katha karanna/i, /managerwa/i,
+  ];
   return ESCALATION_TRIGGERS.some((re) => re.test(message));
 }
 
-function responseRequestsEscalation(response) {
-  return response.includes("ESCALATE_TO_HUMAN");
+function looksTooRobotic(text) {
+  return [
+    /phones? eka thiyenawada/i,
+    /kohomada phone eka/i,
+    /great question/i,
+    /certainly/i,
+    /of course/i,
+    /\bAs an AI\b/i,
+    /\bI am a bot\b/i,
+    /\blet me know if you need\b/i,
+    /\bhere are\b/i,
+    /\bwe have\b.*\bwe have\b/i,
+  ].some((re) => re.test(text));
 }
 
-function cleanEscalationSentinel(response) {
-  return response.replace("ESCALATE_TO_HUMAN", "").trim();
+function cleanReply(text) {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim();
 }
-
-// ─── Groq API Call ────────────────────────────────────────────────────────────
 
 async function getAIResponse(userMessage, history = []) {
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(userMessage);
 
   const messages = [
     { role: "system", content: systemPrompt },
@@ -120,34 +143,80 @@ async function getAIResponse(userMessage, history = []) {
     { role: "user", content: userMessage },
   ];
 
+  const payload = {
+    model: "llama-3.1-8b-instant",
+    messages,
+    temperature: 0.25,
+    top_p: 0.85,
+    max_tokens: 70,
+    frequency_penalty: 0.1,
+    presence_penalty: 0.0,
+  };
+
   try {
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "llama-3.1-8b-instant",
-        messages,
-        temperature: 0.7,   // slightly higher = more natural/human feel
-        max_tokens: 150,    // force short replies
-        top_p: 0.9,
-      },
+      payload,
       {
         timeout: 30000,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${config.groq.apiKey}`,
+          Authorization: `Bearer ${config.groq.apiKey}`,
         },
       }
     );
 
-    const reply = response.data?.choices?.[0]?.message?.content;
+    let reply = response.data?.choices?.[0]?.message?.content;
     if (!reply) throw new Error("Empty response from Groq");
-    return reply.trim();
 
+    reply = cleanReply(reply);
+
+    if (looksTooRobotic(reply)) {
+      const repairPrompt = `
+Rewrite this to sound like a real human WhatsApp sales reply.
+Rules:
+- Max 2 short sentences
+- Use the same language style as the user
+- Start with a direct answer
+- End with one short question
+- Do not sound scripted
+- Do not mention multiple products unless necessary
+
+Text:
+${reply}
+`.trim();
+
+      const repairResponse = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: "llama-3.1-8b-instant",
+          messages: [
+            { role: "system", content: "You rewrite short WhatsApp sales replies." },
+            { role: "user", content: repairPrompt },
+          ],
+          temperature: 0.15,
+          max_tokens: 50,
+          top_p: 0.8,
+        },
+        {
+          timeout: 30000,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${config.groq.apiKey}`,
+          },
+        }
+      );
+
+      const fixed = repairResponse.data?.choices?.[0]?.message?.content;
+      if (fixed) reply = cleanReply(fixed);
+    }
+
+    return reply;
   } catch (err) {
     const status = err.response?.status;
     const detail = err.response?.data?.error?.message || err.message;
     if (status === 401) throw new Error("Groq API error: Invalid API key");
-    if (status === 429) throw new Error("Groq rate limit hit — please wait a moment");
+    if (status === 429) throw new Error("Groq rate limit hit");
     throw new Error(`Groq error: ${detail}`);
   }
 }
@@ -155,6 +224,4 @@ async function getAIResponse(userMessage, history = []) {
 module.exports = {
   getAIResponse,
   detectEscalation,
-  responseRequestsEscalation,
-  cleanEscalationSentinel,
 };
