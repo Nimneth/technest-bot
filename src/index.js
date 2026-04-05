@@ -1,27 +1,29 @@
 require("dotenv").config();
-const express = require("express");
-const morgan = require("morgan");
-const config = require("./config");
-const webhookRouter = require("./routes/webhook");
-const adminRouter = require("./routes/admin");
-
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
-app.use("/webhook", webhookRouter);
-app.use("/admin", adminRouter);
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "TechNest WhatsApp AI Chatbot", ai: "Gemini 1.5 Pro", uptime: process.uptime().toFixed(1) + "s" });
-});
-
-app.use((req, res) => res.status(404).json({ error: "Route not found" }));
-app.use((err, req, res, _next) => res.status(500).json({ error: "Internal server error" }));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🤖 TechNest Bot ONLINE | Port: ${PORT} | AI: Gemini 1.5 Pro`);
-});
-
-module.exports = app;
+const config = {
+  server: { port: parseInt(process.env.PORT) || 3000, env: process.env.NODE_ENV || "development" },
+  whatsapp: {
+    token: process.env.WHATSAPP_TOKEN,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "technest_verify_2024",
+    apiVersion: process.env.WHATSAPP_API_VERSION || "v25.0",
+    get apiUrl() { return `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/messages`; },
+  },
+  openrouter: { apiKey: process.env.OPENROUTER_API_KEY },
+  admin: { phoneNumber: process.env.ADMIN_PHONE_NUMBER },
+  chat: {
+    historyStorage: process.env.HISTORY_STORAGE || "memory",
+    historyFilePath: "./logs/chat_history.json",
+    maxHistoryPerUser: 20,
+    maxTurnsBeforeEscalation: parseInt(process.env.MAX_TURNS_BEFORE_SUGGEST_ESCALATION) || 10,
+  },
+  shop: {
+    name: "TechNest Gadget Shop",
+    location: "123 Galle Road, Colombo 03, Sri Lanka",
+    phone: "+94 11 234 5678",
+    whatsapp: "+94 77 234 5678",
+    email: "hello@technest.lk",
+    hours: "Mon-Sat: 9AM-8PM | Sun: 10AM-6PM",
+    website: "www.technest.lk",
+  },
+};
+module.exports = config;
