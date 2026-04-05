@@ -64,8 +64,12 @@ User: "Hi"
 Kasun: "Hey there! How can I help you today?"
 
 SHOP: ${shop.name} | ${shop.location} | ${shop.hours} | ${shop.phone}
-PRODUCTS: ${products}
-SERVICES: ${services}`;
+PRODUCTS:
+${products}
+SERVICES:
+${services}
+
+Remember: Short. Direct. Human. Mirror language exactly.`;
 }
 
 const ESCALATION_TRIGGERS = [
@@ -86,50 +90,73 @@ function cleanEscalationSentinel(response) {
 
 async function getAIResponse(userMessage, history = []) {
   const systemPrompt = buildSystemPrompt();
-  const geminiHistory = history.map((msg) => ({
-    role: msg.role === "assistant" ? "model" : "user",
-    parts: [{ text: msg.content }],
-  }));
-  const contents = [
-    ...geminiHistory,
-    { role: "user", parts: [{ text: userMessage }] },
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history.map((msg) => ({
+      role: msg.role === "assistant" ? "assistant" : "user",
+      content: msg.content,
+    })),
+    { role: "user", content: userMessage },
   ];
 
-  // Try models in order until one works
+  // Free models on OpenRouter — tries in order
   const models = [
-    "gemini-2.5-flash-preview-04-17",
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash",
+    "google/gemini-2.0-flash-exp:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
   ];
 
   for (const model of models) {
     try {
+      console.log(`🤖 Trying model: ${model}`);
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.gemini.apiKey}`,
+        "https://openrouter.ai/api/v1/chat/completions",
         {
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 100, topP: 0.9 },
+          model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 120,
+          top_p: 0.9,
+          frequency_penalty: 0.4,
         },
-        { timeout: 30000, headers: { "Content-Type": "application/json" } }
+        {
+          timeout: 30000,
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${config.openrouter.apiKey}`,
+            "HTTP-Referer": "https://technest.lk",
+            "X-Title": "TechNest WhatsApp Bot",
+          },
+        }
       );
-      const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      const reply = response.data?.choices?.[0]?.message?.content;
       if (reply) {
-        console.log(`✅ Gemini model used: ${model}`);
+        console.log(`✅ Model worked: ${model}`);
         return reply.trim();
       }
     } catch (err) {
       const status = err.response?.status;
-      if (status === 429) throw new Error("Gemini rate limit hit");
-      if (status === 404) {
-        console.log(`⚠️ Model ${model} not found, trying next...`);
-        continue; // try next model
+      const detail = err.response?.data?.error?.message || err.message;
+      if (status === 429) {
+        console.log(`⚠️ Rate limit on ${model}, trying next...`);
+        continue;
       }
-      throw new Error(`Gemini error: ${err.response?.data?.error?.message || err.message}`);
+      if (status === 400 || status === 404) {
+        console.log(`⚠️ Model ${model} unavailable, trying next...`);
+        continue;
+      }
+      throw new Error(`OpenRouter error: ${detail}`);
     }
   }
 
-  throw new Error("All Gemini models failed");
+  throw new Error("All OpenRouter models failed");
 }
 
-module.exports = { getAIResponse, detectEscalation, responseRequestsEscalation, cleanEscalationSentinel };
+module.exports = {
+  getAIResponse,
+  detectEscalation,
+  responseRequestsEscalation,
+  cleanEscalationSentinel,
+};
