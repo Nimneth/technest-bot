@@ -30,6 +30,7 @@ Q: "iPhone එකේ මිල කීයද?" → A: "229,999 යි. ගන්�
 Q: "Samsung phone honda නෙද?" → A: "ඔව් S24 Ultra godak honda. බලන්න එන්නද?"
 Q: "Screen fix karanawada?" → A: "ඔව් කරනවා. කොයි phone එකද?"
 Q: "ආයුබෝවන්" → A: "ආයුබෝවන්! මොකක්ද ඕන?"
+Q: "Laptop thibenawaada?" → A: "ඔව් තියෙනවා. Budget eka kohomada?"
 
 SINGLISH REPLY EXAMPLES:
 Q: "Kohomada bro phone oneda?" → A: "Ada ada, mokakda dannne oney? Budget eka kohomada?"
@@ -42,7 +43,7 @@ Q: "Can you fix screens?" → A: "Yeah, 5k to 25k depending on the phone. Which 
 Q: "Hi" → A: "Hey! What are you looking for?"
 
 OUT OF SCOPE:
-Q: anything not about shop → A: "Haha that's not my department 😄 Mokakda phone wise?"
+Q: anything not about shop → A: "Haha that's not my department 😄 Mokakda phone wise oney?"
 
 SHOP INFO:
 Name: ${shop.name} | Location: ${shop.location} | Hours: ${shop.hours} | Phone: ${shop.phone}
@@ -54,16 +55,6 @@ SERVICES:
 ${services}
 
 Remember: Short. Direct. Human. Mirror the customer's language exactly.`;
-}
-
-// ─── Language detector — helps pick escalation language ──────────────────────
-
-function detectLanguage(text) {
-  const sinhalaPattern = /[\u0D80-\u0DFF]/;
-  const singlishPattern = /\b(kohomada|mokada|honda|neda|machan|ada|ayyo|bro|eka|thibena|dannne|naha|api|oya)\b/i;
-  if (sinhalaPattern.test(text)) return "sinhala";
-  if (singlishPattern.test(text)) return "singlish";
-  return "english";
 }
 
 // ─── Escalation Detection ────────────────────────────────────────────────────
@@ -88,58 +79,57 @@ function cleanEscalationSentinel(response) {
   return response.replace("ESCALATE_TO_HUMAN", "").trim();
 }
 
-// ─── Groq API Call ────────────────────────────────────────────────────────────
+// ─── Gemini API Call ──────────────────────────────────────────────────────────
 
 async function getAIResponse(userMessage, history = []) {
   const systemPrompt = buildSystemPrompt();
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    ...history.map((msg) => ({
-      role: msg.role === "assistant" ? "assistant" : "user",
-      content: msg.content,
-    })),
-    { role: "user", content: userMessage },
+  const geminiHistory = history.map((msg) => ({
+    role: msg.role === "assistant" ? "model" : "user",
+    parts: [{ text: msg.content }],
+  }));
+
+  const contents = [
+    ...geminiHistory,
+    { role: "user", parts: [{ text: userMessage }] },
   ];
 
   try {
     const response = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${config.gemini.apiKey}`,
       {
-        model: "llama-3.3-70b-versatile", // bigger model = much better instruction following
-        messages,
-        temperature: 0.7,
-        max_tokens: 100,
-        top_p: 0.9,
-        frequency_penalty: 0.5,
-        presence_penalty: 0.3,
+        system_instruction: {
+          parts: [{ text: systemPrompt }],
+        },
+        contents,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 100,
+          topP: 0.9,
+        },
       },
       {
         timeout: 30000,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${config.groq.apiKey}`,
-        },
+        headers: { "Content-Type": "application/json" },
       }
     );
 
-    const reply = response.data?.choices?.[0]?.message?.content;
-    if (!reply) throw new Error("Empty response from Groq");
+    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!reply) throw new Error("Empty response from Gemini");
     return reply.trim();
 
   } catch (err) {
     const status = err.response?.status;
     const detail = err.response?.data?.error?.message || err.message;
-    if (status === 401) throw new Error("Groq API error: Invalid API key");
-    if (status === 429) throw new Error("Groq rate limit hit");
-    throw new Error(`Groq error: ${detail}`);
+    if (status === 429) throw new Error("Gemini rate limit hit");
+    if (status === 400) throw new Error("Gemini bad request: " + detail);
+    throw new Error(`Gemini error: ${detail}`);
   }
 }
 
 module.exports = {
   getAIResponse,
   detectEscalation,
-  detectLanguage,
   responseRequestsEscalation,
   cleanEscalationSentinel,
 };
