@@ -8,7 +8,7 @@ const config = {
     apiVersion: process.env.WHATSAPP_API_VERSION || "v25.0",
     get apiUrl() { return `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/messages`; },
   },
-  openrouter: { apiKey: process.env.OPENROUTER_API_KEY },
+  gemini: { apiKey: process.env.GEMINI_API_KEY },
   admin: { phoneNumber: process.env.ADMIN_PHONE_NUMBER },
   chat: {
     historyStorage: process.env.HISTORY_STORAGE || "memory",
