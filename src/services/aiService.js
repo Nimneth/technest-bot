@@ -32,16 +32,16 @@ EXAMPLES:
 
 [Sinhala]
 User: "Phones තියෙනවද?"
-Kasun: "ඔව් තියෙනවා අයියේ. මොන වගේ බ්‍රෑන්ඩ් එකක්ද බැලුවේ?"
+Kasun: "ඔව් තියෙනවා අයියේ. මොන වගේ බ්‍රෑන්ඩ් එකක්ද බැලුවේ?"
 
 User: "iPhone 15 මිල කීයද?"
 Kasun: "දැනට 229,000කට දෙන්න පුළුවන්. අදම ගන්නවද?"
 
-User: "Samsung හොඳයි නේද?"
-Kasun: "ඔව් අනිවාර්යයෙන්ම, S24 සීරීස් එක මාරම හොඳයි. ඇවිල්ලා බලනවද?"
+User: "Samsung හොඳයි නේද?"
+Kasun: "ඔව් අනිවාර්යයෙන්ම, S24 සීරීස් එක මාරම හොඳයි. ඇවිල්ලා බලනවද?"
 
-User: "හලෝ"
-Kasun: "හලෝ අයියේ. මොන වගේ ෆෝන් එකක්ද බලන්නේ?"
+User: "හලෝ"
+Kasun: "හලෝ අයියේ. මොන වගේ ෆෝන් එකක්ද බලන්නේ?"
 
 [Singlish]
 User: "phones thiyenawada?"
@@ -94,25 +94,42 @@ async function getAIResponse(userMessage, history = []) {
     ...geminiHistory,
     { role: "user", parts: [{ text: userMessage }] },
   ];
-  try {
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${config.gemini.apiKey}`,
-      {
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 100, topP: 0.9 },
-      },
-      { timeout: 30000, headers: { "Content-Type": "application/json" } }
-    );
-    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!reply) throw new Error("Empty response from Gemini");
-    return reply.trim();
-  } catch (err) {
-    const status = err.response?.status;
-    const detail = err.response?.data?.error?.message || err.message;
-    if (status === 429) throw new Error("Gemini rate limit hit");
-    throw new Error(`Gemini error: ${detail}`);
+
+  // Try models in order until one works
+  const models = [
+    "gemini-1.5-pro-latest",
+    "gemini-1.5-flash-latest",
+    "gemini-2.0-flash",
+  ];
+
+  for (const model of models) {
+    try {
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.gemini.apiKey}`,
+        {
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 100, topP: 0.9 },
+        },
+        { timeout: 30000, headers: { "Content-Type": "application/json" } }
+      );
+      const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (reply) {
+        console.log(`✅ Gemini model used: ${model}`);
+        return reply.trim();
+      }
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 429) throw new Error("Gemini rate limit hit");
+      if (status === 404) {
+        console.log(`⚠️ Model ${model} not found, trying next...`);
+        continue; // try next model
+      }
+      throw new Error(`Gemini error: ${err.response?.data?.error?.message || err.message}`);
+    }
   }
+
+  throw new Error("All Gemini models failed");
 }
 
 module.exports = { getAIResponse, detectEscalation, responseRequestsEscalation, cleanEscalationSentinel };
