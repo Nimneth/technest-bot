@@ -97,8 +97,8 @@ async function getAIResponse(userMessage, history = []) {
 
   // Try models in order until one works
   const models = [
-    "gemini-1.5-pro-latest",
-    "gemini-1.5-flash-latest",
+    "gemini-2.5-flash-preview-04-17",
+    "gemini-2.0-flash-lite",
     "gemini-2.0-flash",
   ];
 
