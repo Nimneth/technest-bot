@@ -1,54 +1,43 @@
 require("dotenv").config();
-const express = require("express");
-const morgan = require("morgan");
-const config = require("./config");
 
-const webhookRouter = require("./routes/webhook");
-const adminRouter = require("./routes/admin");
+const config = {
+  server: {
+    port: parseInt(process.env.PORT) || 3000,
+    env: process.env.NODE_ENV || "development",
+  },
+  whatsapp: {
+    token: process.env.WHATSAPP_TOKEN,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "technest_verify_2024",
+    apiVersion: process.env.WHATSAPP_API_VERSION || "v25.0",
+    get apiUrl() {
+      return `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/messages`;
+    },
+  },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  groq: {
+    apiKey: process.env.GROQ_API_KEY,
+  },
+  admin: {
+    phoneNumber: process.env.ADMIN_PHONE_NUMBER,
+  },
+  chat: {
+    historyStorage: process.env.HISTORY_STORAGE || "memory",
+    historyFilePath: "./logs/chat_history.json",
+    maxHistoryPerUser: 20,
+    maxTurnsBeforeEscalation: parseInt(process.env.MAX_TURNS_BEFORE_SUGGEST_ESCALATION) || 10,
+  },
+  shop: {
+    name: "TechNest Gadget Shop",
+    location: "123 Galle Road, Colombo 03, Sri Lanka",
+    phone: "+94 11 234 5678",
+    whatsapp: "+94 77 234 5678",
+    email: "hello@technest.lk",
+    hours: "Mon-Sat: 9:00 AM - 8:00 PM | Sun: 10:00 AM - 6:00 PM",
+    website: "www.technest.lk",
+  },
+};
 
-const app = express();
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
-
-app.use("/webhook", webhookRouter);
-app.use("/admin", adminRouter);
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "TechNest WhatsApp AI Chatbot",
-    ai: "Groq Llama3",
-    env: config.server.env,
-    uptime: process.uptime().toFixed(1) + "s",
-  });
-});
-
-app.use((req, res) => res.status(404).json({ error: "Route not found" }));
-
-app.use((err, req, res, _next) => {
-  console.error("Error:", err.message);
-  res.status(500).json({ error: "Internal server error" });
-});
-
-// Railway sets PORT automatically — always use process.env.PORT
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`
-╔═══════════════════════════════════════════════╗
-║   🤖  TechNest WhatsApp AI Chatbot            ║
-╠═══════════════════════════════════════════════╣
-║  Status  : ONLINE                             ║
-║  Port    : ${String(PORT).padEnd(35)}║
-║  AI      : Groq Llama3-8b-instant             ║
-╠═══════════════════════════════════════════════╣
-║  Webhook : POST /webhook                      ║
-║  Admin   : GET  /admin                        ║
-║  Health  : GET  /health                       ║
-╚═══════════════════════════════════════════════╝
-  `);
-});
-
-module.exports = app;
+module.exports = config;
